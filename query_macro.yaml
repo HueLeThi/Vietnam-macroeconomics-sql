@@ -1,0 +1,4172 @@
+gdp-by-sectors:
+  sql: |-   
+        with table0 as
+        (
+        select 
+        report_date
+        , case
+                when sector = 'Công nghiệp và xây dựng'then ' Industry and Construction'
+                when sector = 'Nông, lâm nghiệp và thủy sản'then ' Agriculture, Forestry and Fishing'
+                else 'Services'
+        end as sector
+        , gdp
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where index_basis  is null 
+        and gdp_tp = 'GDP thực'
+        and sector in 
+        ('Công nghiệp và xây dựng', 
+        'Nông, lâm nghiệp và thủy sản',
+        'Dịch vụ'
+        ))
+        , table1 as
+        (
+        select 
+                        min(report_date) min_date
+                        , case 
+                                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        end report_date
+                        , sector
+                        , sum(gdp) gdp
+                from table0
+                group by sector
+                        , case 
+                                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        end
+        )
+        select curr.*
+        , coalesce((curr.gdp - prev.gdp)/nullif(prev.gdp,0),0) yoy
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        and curr.sector = prev.sector
+        order by curr.min_date, curr.sector
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+gdp-growth-by-sub-sector:
+gdp-total:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        ,gdp
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where index_basis is null
+        and gdp_tp = 'GDP thực'
+        and sector is NULL
+        )
+        , table1 as
+        (
+        select 
+                        min(report_date) min_date
+                        , case 
+                                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        end report_date
+                        , sum(gdp) gdp
+                from table0
+                group by
+                        case 
+                                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        end
+        )
+        select curr.*
+        , coalesce((curr.gdp - prev.gdp)/nullif(prev.gdp,0),0) yoy
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        order by curr.min_date
+                limit ?
+                offset ?
+params:
+        - start_date
+        - end_date
+        - date_type
+gdp-per-sector:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , case
+                when sector = 'Công nghiệp và xây dựng'then ' Industry and Construction'
+                when sector = 'Nông, lâm nghiệp và thủy sản'then ' Agriculture, Forestry and Fishing'
+                else 'Services'
+        end as sector
+        , gdp
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where index_basis  is null 
+        and gdp_tp = 'GDP thực'
+        and sector in 
+        ('Công nghiệp và xây dựng', 
+        'Nông, lâm nghiệp và thủy sản',
+        'Dịch vụ'
+        ))
+        , table1 as
+        (
+        select 
+                        min(report_date) min_date
+                        , case 
+                                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        end report_date
+                        , sector
+                        , sum(gdp) gdp
+                from table0
+                group by sector
+                        , case 
+                                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        end
+        )
+        select curr.*
+        , coalesce((curr.gdp - prev.gdp)/nullif(prev.gdp,0),0) yoy
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        and curr.sector = prev.sector
+        order by curr.min_date, curr.sector
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+top-5-sectors-in-GDP:
+sql: |-
+                With table0 as
+                (
+                select 
+                report_date
+                ,case
+                        when sector = 'Nông nghiệp và hoạt động dịch vụ có liên quan' then 'Agriculture'
+                        when sector = 'Xây dựng' then 'Construction'
+                        when sector = 'Hoạt động tài chính, ngân hàng và bảo hiểm' then 'Finance, banking & insurance'
+                        when sector = 'Công nghiệp chế biến, chế tạo' then 'Manufacturing'
+                        when sector = 'Bán buôn và bán lẻ; sửa chữa ô tô, mô tô, xe máy và xe có động cơ khác' then ' Wholesales and retail trade; vehicles and motorcycles'
+                        when sector = 'Hoạt động kinh doanh bất động sản' then 'Real estate activities'
+                        when sector = 'Hoạt động làm thuê các công việc trong các hộ gia đình, sản xuất sản phẩm vật chất và dịch vụ tự tiêu dùng của hộ gia đình'then 'Activities of households as employers; undifferentiated goods and services for own use'
+                        when sector = 'Hoạt động hành chính và dịch vụ hỗ trợ' then 'Administrative and support service activities'
+                        when sector = 'Vận tải kho bãi' then '        Transportation and storage'
+                        when sector = 'Khai thác, nuôi trồng thủy sản' then 'Fishing'
+                        when sector = 'Hoạt động của đảng cộng sản, tổ chức chính trị - xã hội, quản lý nhà nước, an ninh quốc phòng; bảo đảm xã hội bắt buộc' then 'Public administration and defense; compulsory social security'
+                        when sector = 'Hoạt động chuyên môn, khoa học và công nghệ'then 'Professional, scientific and technical activities'
+                        when sector = 'Nghệ thuật, vui chơi và giải trí' then 'Entertainment'
+                        when sector = 'Giáo dục và đào tạo' then 'Education'
+                        when sector = 'Thông tin và truyền thông' then 'Communication'
+                        when sector = 'Cung cấp nước; hoạt động quản lý và xử lý rác thải, nước thải' then 'Water supply; sewerage, waste management and remediation activities'
+                        when sector = 'Y tế và hoạt động trợ giúp xã hội' then 'Human health and social work activities'
+                        when sector = 'Hoạt động dịch vụ khác' then 'Other service activities'
+                        when sector = 'Dịch vụ lưu trú và ăn uống' then 'Accommodation and food service activities'
+                        when sector = 'Lâm nghiệp và hoạt động dịch vụ có liên quan' then 'Forestry and related service activities'
+                        when sector = 'Khai khoáng' then 'Mining and quarrying'
+                        when sector = 'Sản xuất và phân phối điện, khí đốt, nước nóng, hơi nước và điều hoà không khí' then 'Electricity, gas, steam and air conditioning supply'
+                end as sector
+                , gdp
+                from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector
+                where index_basis is null and gdp_tp = 'GDP danh nghĩa' and sector is not null
+                and sector not in('Nông, lâm nghiệp và thủy sản', 'Công nghiệp', 'Dịch vụ', 'Công nghiệp và xây dựng')
+                )
+                , table1 as
+                (
+                select 
+                        min(report_date) min_date
+                        , case 
+                                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        end report_date
+                        , sector
+                        , sum(gdp) gdp
+                from table0
+                group by sector
+                        ,case 
+                                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        end
+                )
+                , table2 as
+                (
+                select 
+                min_date
+                , report_date
+                , sector
+                , gdp
+                ,ROUND(gdp/SUM(gdp) over (Partition by report_date)*100, 0) as gdp_share
+                from table1
+                )
+                , table3 as
+                (
+                select 
+                min_date
+                , report_date
+                , sector
+                , gdp_share
+                , ROW_NUMBER() OVER (partition by report_date ORDER BY gdp_share DESC) AS rank
+                FROM table2
+                )
+                select 
+                report_date
+                , case when rank <= 5 then sector
+                else 'Others'
+                end as sector
+                , SUM(gdp_share) as gdp_share
+                from table3
+                where report_date >= :start_date and report_date <= :end_date
+                group by report_date
+                , case when rank <= 5 then sector
+                else 'Others'
+                end
+                order by report_date
+                ,gdp_share DESC
+                limit ?
+                offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+export-GDP:
+sql: |-
+        With table0 as
+        (
+        select 
+        report_date
+        , gdp
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where sector is null and gdp_tp = 'GDP danh nghĩa' and index_basis is null and component is null
+        )
+        , table1 as
+        (
+        select distinct report_date
+        , foreign_exchange_rate as rate
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam 
+        where foreign_exchange_rate_tp = 'Tỷ giá USD trung tâm - NHNN' and report_date in 
+        (select max(report_date) from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam 
+        group by year(report_date), quarter(report_date))
+        )
+        , table2 as
+        (
+        select
+        Min(report_date) as report_date
+        , SUM (value) as export
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_import_export_per_component 
+        where trade_tp ='Xuất khẩu' and dmt_or_frgn is null and index_basis is NULL
+        group by year(report_date), quarter(report_date)
+        )
+        , table3 as
+        (
+        select 
+        t2.report_date
+        , ROUND((export*rate / 1000), 2) as export
+        from table2 t2
+        join table1 t1
+        on Year(t2.report_date) = year(t1.report_date) and Quarter(t2.report_date) = quarter(t1.report_date)
+        )
+        , table4 as
+        (
+        select
+        t0.report_date
+        , gdp
+        , export
+        from table0 t0
+        left join table3 t3
+        on Quarter(t0.report_date) = Quarter(t3.report_date)
+        and Year(t0.report_date) = year(t3.report_date)
+        )
+        , table5 as
+        (
+        select 
+                min(report_date) min_date
+                , case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end report_date
+                , sum(gdp) gdp
+                , sum(export) export
+        from table4
+        group by 
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end
+        )
+        select min_date
+        , ROUND((export/gdp)*100,0) as rate
+        from table5
+        where min_date >= :start_date and report_date <= :end_date
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+export-import-turnover-and-trade-balance:
+sql: |-
+      with table0 as
+        (
+        Select 
+        report_date 
+        , trade_tp
+        , value/1000 as value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_import_export_per_component 
+        where index_basis is null 
+        and dmt_or_frgn is null
+        )
+        ,table1 as
+        (
+        select report_date
+        , sum(case when trade_tp = 'Xuất khẩu' then value else 0 end) as export
+        , sum(case when trade_tp = 'Nhập khẩu' then value else 0 end) as import
+        from table0
+        group by report_date
+      )
+      , table2 as
+      (
+          select 
+          min(report_date) min_date
+      , case 
+      when :date_type = 'năm' then cast(year(report_date) as varchar)
+      when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+      when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+      end report_date
+      , sum(export) export
+      , sum(import) import
+      from table1
+      group by 
+      case 
+      when :date_type = 'năm' then cast(year(report_date) as varchar)
+      when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+      when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+      end
+      )
+        select min_date
+        , report_date
+        , export
+        , import
+        , export - import as trade_balance
+        from table2
+        where report_date >= :start_date and report_date <= :end_date
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+export-import-growth-by-products:
+import:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , product
+        , total_value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_import_export_per_product
+        where product is not null
+        and trade_tp = 'Nhập khẩu' 
+        and index_basis is NULL
+        )
+        , table1 as
+        (
+          select 
+            min(report_date) min_date
+            , case 
+              when 'quý' = 'năm' then cast(year(report_date) as varchar)
+              when 'quý' = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+              when 'quý' = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+            end report_date
+            , product
+            , sum(total_value) value
+          from table0
+          group by product
+            ,case 
+              when 'quý' = 'năm' then cast(year(report_date) as varchar)
+              when 'quý' = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+              when 'quý' = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+            end
+        )
+            select curr.*
+        , Coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy 
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        and curr.product = prev.product
+        order by curr.min_date, curr.product
+        where report_date >= :start_date and report_date <= :end_date
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+export:
+sql: |-
+  with table0 as
+        (
+        select 
+        report_date
+        , product
+        , total_value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_import_export_per_product
+        where product is not null
+        and trade_tp = 'Xuất khẩu' 
+        and index_basis is NULL
+        )
+        , table1 as
+        (
+          select 
+            min(report_date) min_date
+            , case 
+              when 'quý' = 'năm' then cast(year(report_date) as varchar)
+              when 'quý' = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+              when 'quý' = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+            end report_date
+            , product
+            , sum(total_value) value
+          from table0
+          group by product
+            ,case 
+              when 'quý' = 'năm' then cast(year(report_date) as varchar)
+              when 'quý' = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+              when 'quý' = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+            end
+        )
+            select curr.*
+        , Coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy 
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        and curr.product = prev.product
+        order by curr.min_date, curr.product
+        where report_date >= :start_date and report_date <= :end_date
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+
+retail-growth-sector-contribution:
+sql: |-
+        with table0 as
+        (
+        select
+        report_date
+        , value
+        , case
+                when sector = 'Bán lẻ (trừ ô tô, mô tô, xe máy và xe có động cơ khác)'then 'Retail sales'
+                when sector = 'Dịch vụ lưu trú và ăn uống' then 'Accommodation and catering service'
+                when sector = 'Hoạt động của các đại lý du lịch, kinh doanh tua du lịch và các dịch vụ hỗ trợ, liên quan đến quảng bá và tổ chức tua du lịch' then 'Travelling service'
+                else 'Other services'
+                end as sector
+        from iceberg.mart_macroeconomics.fact_macroeconomics_retail_sale_index 
+        where index_basis is null and sector is not null
+        )
+        , table1 as
+        (
+          select 
+            min(report_date) min_date
+            , case 
+              when :date_type = 'năm' then cast(year(report_date) as varchar)
+              when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+              when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+            end report_date
+            , sector
+            , sum(value) value
+          from table0
+          group by sector
+            , case 
+              when :date_type = 'năm' then cast(year(report_date) as varchar)
+              when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+              when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+            end
+        )
+        , table2 as
+        (
+        select curr.min_date
+        , curr.report_date
+        , curr.sector
+        , curr.value as value
+        , prev.value as last_value
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        and curr.sector = prev.sector
+                )
+                , table3 as
+                (
+                select 
+                report_date
+                , min_date
+                , SUM(case when sector = 'Retail sales' then value else 0 end) as Retail_sales
+                , SUM(case when sector = 'Retail sales' then last_value else 0 end) as last_retail_sales
+                , SUM(case when sector = 'Accommodation and catering service' then value else 0 end) as Accommodation_service
+                , SUM(case when sector = 'Accommodation and catering service' then last_value else 0 end) as Last_accommodation
+                , SUM(case when sector = 'Travelling service' then value else 0 end) as Travelling_service
+                , SUM(case when sector = 'Travelling service' then last_value else 0 end) as Last_travelling_service
+                , SUM(case when sector = 'Other services' then value else 0 end) as Other_services
+                , SUM(case when sector = 'Other services' then last_value else 0 end) as Last_other
+        from table2
+        group by report_date, min_date
+        )
+        , table4 as
+        (
+        select 
+                report_date
+                , min_date
+                , ROUND((Retail_sales - last_retail_sales)/ NULLIF((last_retail_sales + Last_accommodation + Last_travelling_service + Last_other),0) *100, 2) as retail_sales
+                , ROUND((Accommodation_service - Last_accommodation)/ NULLIF((last_retail_sales + Last_accommodation + Last_travelling_service + Last_other),0) *100, 2) as accomodation
+                , ROUND((Travelling_service - Last_travelling_service)/ NULLIF((last_retail_sales + Last_accommodation + Last_travelling_service + Last_other),0) *100, 2) as travelling
+                , ROUND((Other_services - Last_other)/ NULLIF((last_retail_sales + Last_accommodation + Last_travelling_service + Last_other),0) *100, 2) as Other
+        from table3
+        )
+        select
+                report_date
+                , min_date
+                , retail_sales
+                , accomodation
+                , travelling
+                , other
+                , retail_sales + accomodation + travelling + other as Retail
+        from table4
+        where report_date >= :start_date and report_date <= :end_date
+        order by report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+number-of-international-visitors:
+sql: |-
+        with a as (
+                select report_date, num_of_inter_passengers num 
+                from iceberg.mart_macroeconomics.fact_macroeconomics_international_visitors_per_type 
+                where means_of_transportation is null and index_basis is null
+        ), b as 
+        (
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        sum(num) num
+        from a
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        select curr.*
+        , coalesce((curr.num - prev.num)/nullif(prev.num,0),0) yoy
+        from b curr
+        join b prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        where report_date >= :start_date and report_date <= :end_date
+        order by min_date
+        limit ?
+        offset ?
+params:
+- start_date
+- end_date
+- date_type
+
+retail-growth-by-sectors:
+total-retail:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , case
+                when sector is null then 'Total_Value'
+        end as sector
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_retail_sale_index 
+        where index_basis is null
+        and sector is null
+        )
+        , table1 as
+        (
+        select
+        min(report_date) min_date,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end report_date,
+                sum(value) value
+        from table0
+        group by 
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end
+        )
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy 
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        where report_date >= :start_date and report_date <= :end_date
+        order by curr.min_date
+        limit ?
+        offset ?
+params:
+        - start_date
+        - end_date
+        - date_type
+retail-growth-by-sectors:
+sector:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , value
+        , case
+                when sector = 'Bán lẻ (trừ ô tô, mô tô, xe máy và xe có động cơ khác)'then 'Retail sales'
+                when sector = 'Dịch vụ lưu trú và ăn uống' then 'Accommodation and catering service'
+                when sector = 'Hoạt động của các đại lý du lịch, kinh doanh tua du lịch và các dịch vụ hỗ trợ, liên quan đến quảng bá và tổ chức tua du lịch' then 'Travelling service'
+                else 'Other services'
+                end as sector
+        from iceberg.mart_macroeconomics.fact_macroeconomics_retail_sale_index 
+        where index_basis is null and sector is not null
+        )
+        , table1 as
+        (
+        select 
+                min(report_date) min_date,
+                sector,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end report_date,
+                sum(value) value
+        from table0
+        group by sector,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end
+        )
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy 
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        and curr.sector = prev.sector
+        where report_date >= :start_date and report_date <= :end_date 
+        and sector = :sector
+        order by curr.min_date, curr.sector
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - sector
+    - date_type
+
+net-fdi-gdp:
+sql: |-
+        with table0 as
+        (
+        select 
+        max(report_date) report_date
+        , sum(value) as fdi
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_fdi_investment_per_component 
+        where index_basis is null and component = 'Vốn thực hiện'
+        group by year(report_date), quarter(report_date)
+        )
+        , table1 as
+        (
+        select distinct report_date
+        ,foreign_exchange_rate as rate
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        where foreign_exchange_rate_tp = 'Tỷ giá USD trung tâm - NHNN'
+        and report_date in
+        (
+        select max(report_date) 
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        group by Year(report_date), quarter(report_date)
+        ))
+        , table2 as
+        (
+        select 
+        report_date
+        , Sum(gdp) as gdp
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector
+        where index_basis is null and gdp_tp = 'GDP danh nghĩa' and component is null and sector is null
+        group by report_date
+        )
+        ,table3 as
+        (
+        select t0.report_date
+        , ROUND (fdi*rate/ 1000, 2) as fdi
+        , gdp
+        from table0 t0
+        left join table1 t1
+        on Year(t0.report_date) = Year(t1.report_date)
+        and quarter(t0.report_date) = Quarter(t1.report_date)
+        left join table2 t2
+        on t0.report_date = t2.report_date
+        )
+        , table4 as
+        (
+        select 
+                min(report_date) min_date,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end report_date,
+                sum(fdi) fdi,
+                sum(gdp) gdp
+        from table3
+        group by 
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end
+        )
+        select min_date
+        , report_date
+        , ROUND (fdi/gdp *100, 2) as pct
+        from table4
+        where report_date >= :start_date and report_date <= :end_date
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+fdi-registered-and-disbursement-rolling-12m:
+sql: |-
+        with table0 as
+        (
+        select 
+        Report_Date
+        , case
+                when component = 'Vốn đăng ký' then 'Registered FDI'
+                when component = 'Vốn thực hiện' then 'Disbursed FDI'
+        end as component
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_fdi_investment_per_component 
+        where index_basis is null 
+        and component in ('Vốn đăng ký','Vốn thực hiện')
+        )
+        , table1 as
+        (
+        select
+        report_date
+        , SUM(case when component = 'Registered FDI' then value else 0 end) as fdi_re
+        , SUM(case when component = 'Disbursed FDI' then value else 0 end) as fdi_dis
+        from table0
+        group by report_date
+        )
+        , table2 as
+        (
+        select 
+                min(report_date) min_date,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end report_date,
+                sum(fdi_re) fdi_re,
+                sum(fdi_dis) fdi_dis
+                
+        from table1
+        group by 
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end
+        )
+        select 
+        a.min_date
+        , sum(b.fdi_re) rolling_fdi_re
+        , sum(b.fdi_dis) rolling_fdi_dis
+        , ROUND(a.fdi_re/a.fdi_dis, 2) as pct
+        from table2 a
+        join table2 b
+        on date_diff('month',a.min_date, b.min_date) between 0 and 11
+        where report_date >= :start_date and report_date <= :end_date 
+        group by a.min_date, a.fdi_re, a.fdi_dis
+        order by a.min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+fdi-registered-and-disbursement-growth-YOY:
+sql: |-
+        w with table0 as
+        (
+        select 
+        Report_Date
+        , case
+                when component = 'Vốn đăng ký' then 'Registered FDI'
+                when component = 'Vốn thực hiện' then 'Disbursed FDI'
+        end as component
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_fdi_investment_per_component 
+        where index_basis is null 
+        and component in ('Vốn đăng ký','Vốn thực hiện')
+        )
+        , table1 as
+        (
+        select
+        report_date
+        , SUM(case when component = 'Registered FDI' then value else 0 end) as fdi_re
+        , SUM(case when component = 'Disbursed FDI' then value else 0 end) as fdi_dis
+        from table0
+        group by report_date
+        )
+        , table2 as
+        (
+        select 
+                min(report_date) min_date,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end report_date,
+                sum(fdi_re) fdi_re,
+                sum(fdi_dis) fdi_dis		
+        from table1
+        group by 
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end
+        )
+        select curr.*
+        , coalesce((curr.fdi_re - prev.fdi_re)/nullif(prev.fdi_re,0),0) yoy_fdi_re
+        , coalesce((curr.fdi_dis - prev.fdi_dis)/nullif(prev.fdi_dis,0),0) yoy_fdi_dis
+        from table2 curr
+        join table2 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        where report_date >= :start_date and report_date <= :end_date 
+        order by curr.min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+fdi-registration-by-type:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , case
+                when component = 'Đăng ký cấp mới' then 'New registration'
+                when component = 'Góp vốn, mua cổ phần' then  'via M&A'
+                when component = 'Đăng ký tăng thêm' then ' Expansion of existing project'
+        end as component
+        , value/1000 as value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_fdi_investment_per_component 
+        where index_basis is null and component in ('Đăng ký cấp mới', 'Góp vốn, mua cổ phần', 'Đăng ký tăng thêm') 
+        )
+        select 
+                min(report_date) min_date,
+                component,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end report_date,
+                sum(value) value
+        from table0
+        group by component,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end
+                order by min_date
+        where report_date >= :start_date and report_date <= :end_date 
+        and component = :component
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - component
+    - date_type
+
+
+top-5-sectors-in-fdi-registered:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , case
+                when sector = 'Y tế và hoạt động trợ giúp xã hội' then ' Health and social assistance activities'
+                when sector = 'Hoạt động làm thuê các công việc trong các hộ gia đình, sản xuất sản phẩm vật chất và dịch vụ tự tiêu dùng của hộ gia đình' then 'Activities of households as employers; production of goods and services for own use'
+                when sector = 'Thông tin và truyền thông' then 'Information and communication'
+                when sector = 'Hoạt động kinh doanh bất động sản' then 'Real estate activities'
+                when sector = 'Hoạt động chuyên môn, khoa học và công nghệ' then ' Professional, scientific and technical activities'
+                when sector = 'Nông nghiệp, lâm nghiệp và thuỷ sản' then 'Agriculture, forestry and fishing'
+                when sector = 'Vận tải kho bãi' then 'Transportation and storage'
+                when sector = 'Hoạt động hành chính và dịch vụ hỗ trợ' then ' Administrative and support service activities'
+                when sector = 'Nghệ thuật, vui chơi và giải trí' then 'Arts, entertainment'
+                when sector = 'Dịch vụ lưu trú và ăn uống' then 'Accommodation and food service activities'
+                when sector = 'Bán buôn và bán lẻ; sửa chữa ô tô, mô tô, xe máy và xe có động cơ khác' then 'Wholesale and retail trade; repair of motor vehicles and motorcycles'
+                when sector = 'Công nghiệp chế biến, chế tạo' then 'Manufacturing'
+                when sector = 'Xây dựng' then 'Construction'
+                when sector = 'Giáo dục và đào tạo' then 'Education'
+                when sector = 'Hoạt động tài chính, ngân hàng và bảo hiểm' then 'Hoạt động tài chính, ngân hàng và bảo hiểm'
+                when sector = 'Cung cấp nước; hoạt động quản lý và xử lý rác thải, nước thải' then 'Water supply; sewerage, waste management and remediation activities'
+                when sector = 'Hoạt động dịch vụ khác' then 'Other service activities'
+                when sector = 'Khai khoáng' then ' Mining and quarrying'
+                when sector = 'Sản xuất và phân phối điện, khí đốt, nước nóng, hơi nước và điều hoà không khí' then 'Electricity, gas, steam and air conditioning supply'
+        end as sector
+        , registered_capital as value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_fdi_investment_per_sector
+        where index_basis is null
+        )        
+        , table1 as     
+        (
+        select 
+                min(report_date) min_date,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end report_date,
+                sector,
+                sum(value) value
+        from table0
+        group by sector,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end
+                )
+        , table2 as
+        (
+        select 
+        min_date
+        , report_date
+        , sector
+        , ROUND(coalesce(value/nullif(SUM (value)over(partition by report_date),0),0)*100, 2) as pct
+        from table1
+        )
+        , table3 as
+        (
+        select 
+         min_date
+        , report_date
+        , sector
+        , pct
+        , row_number () over (partition by report_date order by pct desc) as rank
+        from table2
+        )
+        select
+        min_date
+        , report_date
+        , case
+                when rank <=5 then sector
+                else 'Others'
+        end as sector
+        , SUM(pct) as pct
+        from table3
+        where report_date >= :start_date and report_date <= :end_date
+        group by report_date, min_date
+        ,case
+                when rank <=5 then sector
+                else 'Others'
+        end
+        order by report_date,  pct DESC
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+top-5-countries-in-fdi-registered:
+sqlql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , country
+        , registered_capital as value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_fdi_investment_per_country 
+        where index_basis is null 
+        and country not like 'Châu%' 
+        )
+        , table1 as
+        (
+        select 
+                min(report_date) min_date,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end report_date,
+                country,
+                sum(value) value
+        from table0
+        group by country,
+                case 
+                        when :date_type = 'năm' then cast(year(report_date) as varchar)
+                        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end
+        )
+        , table2 as
+        (
+        select 
+        min_date
+        , report_date
+        , country
+        , value
+        , SUM(value) over (partition by report_date) as total_fdi
+        , ROUND(coalesce(value/nullif(SUM (value)over(partition by report_date),0),0)*100, 2) as pct
+        from table1
+        )
+        , table3 as
+        (
+        select 
+        min_date
+        , report_date
+        , country
+        , pct
+        , value
+        , total_fdi
+        , row_number () over (partition by report_date order by pct desc) as rank
+        from table2
+        )
+        select 
+        min_date
+        , report_date
+        , case
+                when rank <= 5 then country
+                else 'Others'
+        end as country
+        , SUM (pct) as pct
+        from table3
+        where report_date >= :start_date and report_date <= :end_date
+        group by report_date, min_date
+        ,case
+                when rank <= 5 then country
+                else 'Others'
+        end 
+        order by min_date, pct desc
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+fdi-registration-by-sectors-rolling-12m:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , case
+                when sector = 'Hoạt động hành chính và dịch vụ hỗ trợ' then 'Administrative and support service activities'
+                when sector = 'Công nghiệp chế biến, chế tạo' then 'Manufacturing'
+                when sector = 'Hoạt động kinh doanh bất động sản' then 'Real estate activities'
+                else 'Others'
+        end as sector
+        , registered_capital as value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_fdi_investment_per_sector
+        where index_basis is null
+        )
+        , table1 as
+        (
+        select report_date
+        , SUM(case when sector = 'Administrative and support service activities' then value else 0 end) as admin
+        ,SUM(case when sector = 'Manufacturing' then value else 0 end) as manufacturing
+        ,SUM(case when sector = 'Real estate activities' then value else 0 end) as estate
+        ,SUM(case when sector = 'Others' then value else 0 end) as others
+        from table0
+        group by report_date
+        )
+        , table2 as
+        (
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        sum(admin) admin,
+        sum(manufacturing) manufacturing,
+        sum(estate) estate,
+        sum(others) others
+        from table1
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        select a.min_date
+        , sum(b.admin) as rolling_admin
+        , sum(b.manufacturing) as rolling_manufacturing
+        , sum(b.estate) as rolling_estate
+        , sum(b.others) as rolling_others
+        from table2 a
+        join table2 b
+        on date_diff('month', a.min_date, b.min_date) between 0 and 11
+           where report_date >= :start_date and report_date <= :end_date 
+           and sector =:sector
+        group by a.min_date
+        order by a.min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - sector
+    - date_type
+
+industrial-production-index-whole-country:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date 
+        , case
+        when sector = 'Công nghiệp' then 'Whole_Industry'
+        end as sector
+        , value
+        FROM iceberg.mart_macroeconomics.fact_macroeconomics_industrial_production_per_sector
+        where index_basis = 'YOY'
+        and sector = 'Công nghiệp'
+        )
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        sector,
+        Round(AVG(value),1) value
+        from table0
+        wherewhere report_date >= :start_date and report_date <= :end_date 
+        group by sector,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+industrial-production-index-sector:
+sql: |-
+        with table0 as
+        (
+        select
+        report_date
+        , case
+                when sector = 'Khai khoáng' then 'Mining and quarying'
+                when sector = 'Công nghiệp chế biến, chế tạo' then 'Manufacturing'
+                when sector = 'Sản xuất và phân phối điện, khí đốt, nước nóng, hơi nước và điều hoà không khí' then ' Electricity, gas, steam and air conditioning supply'
+                when sector = 'Cung cấp nước; hoạt động quản lý và xử lý rác thải, nước thải' then ' Water supply; sewerage, waste management and
+                remediation activities'
+        end as sector
+        , value
+        FROM iceberg.mart_macroeconomics.fact_macroeconomics_industrial_production_per_sector
+        where index_basis = 'YOY'
+        and sector in ('Khai khoáng', 'Công nghiệp chế biến, chế tạo', 'Sản xuất và phân phối điện, khí đốt, nước nóng, hơi nước và điều hoà không khí', 'Cung cấp nước; hoạt động quản lý và xử lý rác thải, nước thải')
+        )
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        sector,
+        Round(AVG(value),1) value
+        from table0
+        group by sector,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        where report_date >= :start_date and report_date <= :end_date 
+        and sector =:sector
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - sector
+    - date_type
+
+
+pmi:
+sql: |-
+        select 
+        report_date
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_purchasing_managers_index
+        where report_date in
+        (
+        select 
+        Max(report_date) report_date
+        from iceberg.mart_macroeconomics.fact_macroeconomics_purchasing_managers_index
+        where report_date >= :start_date and report_date <= :end_date
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        order by report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+monthy-ipp-and-export-growth:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date 
+        , case
+        when sector = 'Công nghiệp' then 'Overall'
+        when sector = 'Công nghiệp chế biến, chế tạo' then 'Manufacturing'
+        end as sector
+        , ROUND(value,2) as value
+        FROM iceberg.mart_macroeconomics.fact_macroeconomics_industrial_production_per_sector
+        where index_basis = 'YOY'
+        and sector in ('Công nghiệp chế biến, chế tạo', 'Công nghiệp')
+        )
+        , table1 as
+        (
+        select 
+        report_date
+        , SUM(case when sector = 'Manufacturing' then value else 0 end) as Manufacturing_IPP
+        , SUM(case when sector = 'Overall' then value else 0 end) as Overall_IPP
+        from table0
+        group by report_date
+        )
+        , table2 as
+        (
+        select
+        report_date 
+        , value as Export
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_import_export_per_component
+        where trade_tp = 'Xuất khẩu'
+        and dmt_or_frgn is null
+        and index_basis is null
+        )
+        , table3 as
+        (
+        select t1.report_date
+        , Manufacturing_IPP
+        , Overall_IPP
+        , Export
+        from table1 t1
+        left join table2 t2
+        on t1.report_date = t2.report_date
+        )
+        , table4 as
+        (
+        select 
+        min(report_date) min_date
+        ,case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        ,AVG(Manufacturing_IPP) Manufacturing_IPP
+        ,AVG(Overall_IPP) Overall_IPP
+        ,Sum(export) export
+        from table3
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end 
+        )
+        select curr.min_date
+        , curr.Manufacturing_IPP
+        , curr.Overall_IPP
+        , coalesce((curr.export - prev.export)/nullif(prev.export,0)*100,0) yoy_export
+        from table4 curr
+        join table4 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        where report_date >= :start_date and report_date <= :end_date 
+        and sector =:sector
+        order by curr.min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+   
+
+
+unemploment-rate:
+sql: |-
+
+        with table0 as
+        (
+        select 
+        report_date
+        , unemployment_rate_labor_force as rate
+        from iceberg.mart_macroeconomics.fact_macroeconomics_unemployment_rate 
+        where urban_or_rural is null
+        and component = 'Tỷ lệ thất nghiệp trong độ tuổi lao động'
+        )
+        , table1 as
+        (
+        select 
+        report_date
+        , value as num
+        from iceberg.mart_macroeconomics.fact_macroeconomics_national_labor_force 
+        where index_basis is null
+        and urban_or_rural is null
+        and gender is null
+        and component = 'Số người thất nghiệp'
+        )
+        , table2 as
+        (
+        select
+        t0.report_date
+        , rate
+        , num
+        from table0 t0
+        left join table1 t1
+        on t0.report_date = t1.report_date
+        )
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        AVG(rate) rate, 
+        SUM(num) as num
+        from table2
+        where t0.report_date >= :start_date and report_date <= :end_date 
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end 
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+unemployment-rate-vs-undererunemployment-rate:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , SUM(case when component = 'Tỷ lệ thất nghiệp trong độ tuổi lao động' then unemployment_rate_labor_force else 0 end) as unemployment_rate
+        , SUM(case when component = 'Tỷ lệ thiếu việc làm trong độ tuổi lao động' then unemployment_rate_labor_force else 0 end) as underderemployment_rate
+        from iceberg.mart_macroeconomics.fact_macroeconomics_unemployment_rate 
+        where urban_or_rural is null
+        group by report_date
+        )
+        select 
+        min(report_date) min_date
+        , case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , AVG(unemployment_rate) unemployment_rate
+        , AVG(underderemployment_rate) underderemployment_rate
+        from table0
+        where t0.report_date >= :start_date and report_date <= :end_date 
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end	
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+business-registration-record:
+sql: |-
+
+        with table0 as
+        (
+        select 
+        report_date
+                , SUM(case when component = 'DN thành lập mới' then value else 0 end) as Newly_established_enterprises
+                , SUM(case when component = 'Vốn đăng ký' then value else 0 end) as Registered_capital
+                , SUM(case when component = 'Lao động' then value else 0 end) as Registered_employees
+        from iceberg.mart_macroeconomics.fact_macroeconomics_business_registration_records 
+        where index_basis is null
+        group by report_date
+        ) 
+        , table1 as
+        (
+        select 
+        min(report_date) min_date
+        , case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , sum(Newly_established_enterprises) Newly_established_enterprises
+        , sum(Registered_capital) Registered_capital
+        , sum(Registered_employees) Registered_employees
+        from table0
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        select curr.min_date
+        , coalesce((curr.Newly_established_enterprises - prev.Newly_established_enterprises)/nullif(prev.Newly_established_enterprises,0),0) yoy_Newly_established_enterprises
+        , coalesce((curr.Registered_capital - prev.Registered_capital)/nullif(prev.Registered_capital,0),0) yoy_Registered_capital
+        , coalesce((curr.Registered_employees - prev.Registered_employees)/nullif(prev.Registered_employees,0),0) yoy_Registered_employees
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        where report_date >= :start_date and report_date <= :end_date 
+        and component = :component
+        order by curr.min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - component
+    - date_type
+
+
+average-income-growth:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_national_labor_force 
+        where component = 'Tiền lương bình quân tháng (Nghìn đồng)'
+        and urban_or_rural is null 
+        and gender is null 
+        and index_basis is null 
+        )
+        , table1 as
+        (
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end report_date,
+        AVG(value) value
+        from table0
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0)*100,0) yoy 
+        from  table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+         where report_date >= :start_date and report_date <= :end_date 
+        order by curr.min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+ 
+
+breakdown-of-stage-budget-revenue:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , case
+                when component is null then 'Total budget revenue and aid'
+                when component = 'Thu thường xuyên' then 'Regular revenue'
+                when component = 'Thu về vốn (thu bán nhà ở, thu tiền sử dụng đất)' then ' Capital revenue (revenue from housing sales, land use fees)'
+                when component = 'Viện trợ không hoàn lại' then  'Non-refundable aid'
+        end as component
+        ,  value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_state_budget_revenues 
+        where index_basis is null
+        and (component is null or component in('Thu thường xuyên', 'Viện trợ không hoàn lại', 'Thu về vốn (thu bán nhà ở, thu tiền sử dụng đất)')
+        ))
+        , table1 as
+        (
+        select 
+        min(report_date) min_date
+        ,case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , component
+        , sum(value) value
+        from table0
+        group by component,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        and curr.component = prev.component
+        where report_date >= :start_date and report_date <= :end_date 
+        and component = :component
+        order by curr.min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - component
+    - date_type
+
+      
+breakdown-of-stage-budget-expense:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , case
+                when component is null then 'Total budget expenditures'
+                when component = 'Chi thường xuyên' then ' Regular expenditures'
+                when component = 'Chi đầu tư phát triển' then  'Development investment expenditures'
+        end as component
+        ,  value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_state_budget_expenses 
+        where index_basis is null
+        and (component is null or component in ('Chi thường xuyên', 'Chi đầu tư phát triển'))
+        )
+        , table1 as
+        (
+        select 
+        min(report_date) min_date
+        ,case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end report_date
+        , component
+        , sum(value) value
+        from table0
+        group by component,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        and curr.component = prev.component
+        where report_date >= :start_date and report_date <= :end_date 
+        and component = :component
+        order by curr.min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - component
+    - date_type
+
+breakdown-of-stage-budget-expense-budget-balance:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , value as total_revenue
+        from iceberg.mart_macroeconomics.fact_macroeconomics_state_budget_revenues 
+        where index_basis is null
+        and component is null
+        )
+        , table1 as
+        (
+        select
+        report_date
+        , value as total_expense
+        from iceberg.mart_macroeconomics.fact_macroeconomics_state_budget_expenses 
+        where index_basis is null
+        and component is null
+        )
+        , table2 as
+        (
+        select
+        t0.report_date
+        , total_revenue - total_expense as budget_balance
+        from table0 t0
+        left join table1 t1
+        on t0.report_date = t1.report_date
+        )
+        , table3 as
+        (
+        select 
+        min(report_date) min_date
+        ,case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        ,sum(budget_balance) budget_balance
+        from table2
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end 
+        )
+        select curr.*
+        , coalesce((curr.budget_balance - prev.budget_balance)/nullif(prev.budget_balance,0),0) yoy
+        from table3 curr
+        join table3 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        where report_date >= :start_date and report_date <= :end_date 
+        order by curr.min_date
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+stage-budget-balance-over-time:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , value as total_revenue
+        from iceberg.mart_macroeconomics.fact_macroeconomics_state_budget_revenues 
+        where index_basis is null
+        and component is null
+        )
+        , table1 as
+        (
+        select
+        report_date
+        , value as total_expense
+        from iceberg.mart_macroeconomics.fact_macroeconomics_state_budget_expenses 
+        where index_basis is null
+        and component is null
+        )
+        , table2 as
+        (
+        select
+        t0.report_date
+        , total_revenue
+        , total_expense
+        , total_revenue - total_expense as budget_balance
+        from table0 t0
+        left join table1 t1
+        on t0.report_date = t1.report_date
+        )
+        select 
+        min(report_date) min_date
+        ,case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , sum(total_revenue) total_revenue
+        , sum (total_expense) total_expense
+        , sum(budget_balance) budget_balance
+        from table2
+        where t0.report_date >= :start_date and report_date <= :end_date 
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end 
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+cpi-index-cpi-total:
+sql: |-
+        with table0 as
+        (
+        select
+        report_date
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        where product is null
+        and Component = 'Chỉ số giá tiêu dùng'
+        and index_basis is null
+        and report_date in
+        (      
+        select 
+        Max(report_date) report_date
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end 
+        ))
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy
+        , coalesce((prev.value - yearM2.value)/nullif(yearM2.value,0),0) yoy_prev
+        from table0 curr
+        join table0 prev 
+        on date_diff('month',prev.report_date, curr.report_date) = 12
+        join table0 yearM2
+        on date_diff('month',yearM2.report_date, prev.report_date) = 12
+        where report_date >= :start_date and report_date <= :end_date 
+        order by curr.report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+cpi-index-top-sector-have-positive-contribution:
+sql: |-
+        with table0 as
+        (
+        select
+        report_date
+        , case
+                when product = 'Hàng hóa và dịch vụ khác' then 'Other goods and services'
+                when product = 'Giáo dục' then 'Education'
+                when product = 'Đồ uống và thuốc lá' then 'Beverages and tobacco'
+                when product = 'Bưu chính viễn thông' then 'Post and telecommunications'
+                when product = 'Giao thông' then 'Transport'
+                when product = 'Thiết bị và đồ dùng gia đình' then 'Household appliances and equipment'
+                when product = 'May mặc, mũ nón , giày dép' then 'Clothing, hats, and footwear'
+                when product = 'Thuốc và dịch vụ y tế' then 'Medicaments and health services'
+                when product = 'Văn hóa, giải trí và du lịch' then 'Culture, entertainment, and tourism'
+                when product = 'Nhà ở, điện nước, chất đốt và vật liệu xây dựng' then 'Housing, electricity, water, fuels, and construction materials'
+                when product = 'Hàng ăn và dịch vụ ăn uống' then 'Food and catering services'
+        end as product
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        where product is not null
+        and Component = 'Chỉ số giá tiêu dùng'
+        and index_basis is null
+        and product not in ('Lương thực',' Thực phẩm', 'Ăn uống ngoài gia đình', 'Dịch vụ giáo dục', 'Dịch vụ khám sức khỏe')
+        and report_date in
+        (      
+        select 
+        Max(report_date) report_date
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end 
+        ))
+        , table1 as(
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy
+        , coalesce((prev.value - yearM2.value)/nullif(yearM2.value,0),0) yoy_prev
+        , row_number () over (partition by curr.Report_date order by coalesce((curr.value - prev.value)/nullif(prev.value,0),0) desc) as rank
+        from table0 curr
+        join table0 prev 
+        on date_diff('month',prev.report_date, curr.report_date) = 12
+        and curr.product = prev.product
+        join table0 yearM2
+        on date_diff('month',yearM2.report_date, prev.report_date) = 12
+        and yearM2.product = prev.product
+        )
+        select
+        report_date
+        , product
+        , yoy
+        , yoy_prev
+        , rank
+        from table1
+        where rank <=5 
+        and report_date >= :start_date and report_date <= :end_date 
+        order by report_date, rank
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+cpi-index-top sector have negative contribution:
+sql: |-
+       with table0 as
+        (
+        select
+        report_date
+        , case
+                when product = 'Hàng hóa và dịch vụ khác' then 'Other goods and services'
+                when product = 'Giáo dục' then 'Education'
+                when product = 'Đồ uống và thuốc lá' then 'Beverages and tobacco'
+                when product = 'Bưu chính viễn thông' then 'Post and telecommunications'
+                when product = 'Giao thông' then 'Transport'
+                when product = 'Thiết bị và đồ dùng gia đình' then 'Household appliances and equipment'
+                when product = 'May mặc, mũ nón , giày dép' then 'Clothing, hats, and footwear'
+                when product = 'Thuốc và dịch vụ y tế' then 'Medicaments and health services'
+                when product = 'Văn hóa, giải trí và du lịch' then 'Culture, entertainment, and tourism'
+                when product = 'Nhà ở, điện nước, chất đốt và vật liệu xây dựng' then 'Housing, electricity, water, fuels, and construction materials'
+                when product = 'Hàng ăn và dịch vụ ăn uống' then 'Food and catering services'
+        end as product
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        where product is not null
+        and Component = 'Chỉ số giá tiêu dùng'
+        and index_basis is null
+        and product not in ('Lương thực',' Thực phẩm', 'Ăn uống ngoài gia đình', 'Dịch vụ giáo dục', 'Dịch vụ khám sức khỏe')
+        and report_date in
+        (      
+        select 
+        Max(report_date) report_date
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end 
+        ))
+        , table1 as(
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy
+        , coalesce((prev.value - yearM2.value)/nullif(yearM2.value,0),0) yoy_prev
+        , row_number () over (partition by curr.Report_date order by coalesce((curr.value - prev.value)/nullif(prev.value,0),0)) as rank
+        from table0 curr
+        join table0 prev 
+        on date_diff('month',prev.report_date, curr.report_date) = 12
+        and curr.product = prev.product
+        join table0 yearM2
+        on date_diff('month',yearM2.report_date, prev.report_date) = 12
+        and yearM2.product = prev.product
+        )
+        select
+        report_date
+        , product
+        , yoy
+        , yoy_prev
+        , rank
+        from table1
+        where rank <=5 
+        and report_date >= :start_date and report_date <= :end_date 
+        order by report_date, rank
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+cpi-of-culture-entertainment-tourist:
+sql: |-
+        with table0 as
+        (
+        select
+        report_date
+        , case
+        when product is null then 'Overall'
+        when product = 'Văn hóa, giải trí và du lịch' then 'sector'
+        end as product
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        where (product is null or product = 'Văn hóa, giải trí và du lịch')
+        and Component = 'Chỉ số giá tiêu dùng'
+        and index_basis is null
+        and report_date in 
+        (
+        select 
+        max(report_date) report_date
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                end 
+        ))
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy
+        from table0 curr
+        join table0 prev 
+        on date_diff('month',prev.report_date, curr.report_date) = 12
+        and curr.product = prev.product
+        where t1.report_date >= :start_date and report_date <= :end_date 
+        order by curr.report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+overall-cpi-and-inflation:
+sql: |-
+        with table0 as
+        (
+        select
+        report_date
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        where product is null
+        and Component = 'Chỉ số giá tiêu dùng'
+        and index_basis is null
+        and report_date in
+        (      
+        select 
+        Max(report_date) report_date
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end 
+        ))
+        , table1 as
+        (
+        select curr.*
+        , Round(coalesce((curr.value - prev.value)/nullif(prev.value,0),0)*100,1) yoy_cpi
+        from table0 curr
+        join table0 prev 
+        on date_diff('month',prev.report_date, curr.report_date) = 12
+        )
+        ,table2 as
+        (
+        select 
+        report_date
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        where component = 'Tỷ lệ lạm phát'
+        and index_basis = 'YOY'
+        )
+        , table3 as
+        (
+        select 
+        max(report_date) max_date
+        ,case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , Round(AVG(value),1) as yoy_inflation
+        from table2
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end       
+        )
+        select t1.report_date
+        , yoy_cpi
+        , yoy_inflation
+        from table1 t1
+        left join table3 t3
+        on year(t1.report_date) = Year(t3.max_date)
+        and quarter(t1.report_date) = quarter(t3.max_date)
+        where t1.report_date >= :start_date and report_date <= :end_date 
+        order by t1.report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+contribution-to-monthy-cpi-yoy:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , product
+        , value as cpi
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index
+        where product is not null
+        and index_basis is null
+        and component = 'Chỉ số giá tiêu dùng'
+        )
+        , table1 as
+        (select 
+        report_date
+        , product
+        , value as weight
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index
+        where product is not null
+        and index_basis = 'Weight'
+        and component = 'Chỉ số giá tiêu dùng'
+        )
+        ,  table2 as
+        (
+        select 
+        t0.report_date
+        , t0.product
+        , t0.cpi
+        , t1.weight
+        from table0 t0
+        left join table1 t1
+        on t0.report_date = t1.report_date
+        and t0.product = t1.product
+        )
+        , table3 as
+        (
+        select report_date
+        , case 
+                when product = 'Hàng ăn và dịch vụ ăn uống' then  'Food and catering services'
+                when product = 'Nhà ở, điện nước, chất đốt và vật liệu xây dựng' then 'Housing and construction materials'
+                when product = 'Giao thông' then 'Transport'
+        else 'Others'
+        end as product
+        , cpi
+        , weight
+        from table2
+        where product not in ('Lương thực','Thực phẩm','Ăn uống ngoài gia đình', 'Dịch vụ giáo dục', 'Dịch vụ khám sức khỏe')
+        and report_date in
+        (select max (report_date)
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        ))
+        , table4 as
+        (
+        select 
+        report_date
+        , product
+        , sum(cpi * weight)/sum(weight) as cpi
+        , sum(weight) as weight
+        from table3
+        group by report_date, product
+        )
+        , table5 as
+        (
+        select report_date
+        , product
+        , cpi*weight/100 as contribution
+        , sum(cpi*weight/100) over (partition by report_date) as cpi_overall
+        from table4
+        )
+        select curr.*
+        , coalesce((curr.contribution - prev.contribution)/nullif(prev.cpi_overall,0),0) contribution_share
+        from table5 curr
+        join table5 prev 
+        on date_diff('month',prev.report_date, curr.report_date) = 12
+        and prev.product = curr.product
+        where report_date >= :start_date and report_date <= :end_date 
+        order by curr.report_date, curr.product
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - product
+    - date_type
+
+
+commodity-price-flucatuation:
+sql: |-
+        with table0 as
+        (
+        select 
+        distinct report_date
+        , commodity_detail
+        , price
+        From iceberg.mart_macroeconomics.fact_macroeconomics_commodity_prices 
+        where index_basis is null
+        )
+        ,table1 as
+        (
+        select 
+        Min(report_date) min_date
+        , commodity_detail
+        , case 
+                when :date_type = 'ngày'  then cast(report_date as varchar)
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(month(report_date) as varchar)  
+        end report_date
+        , AVG(price) as price
+        from table0
+        group by commodity_detail
+        , case 
+                when :date_type = 'ngày' then cast(report_date as varchar)
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(month(report_date) as varchar)  
+        end
+        )
+        select min_date
+        , report_date
+        , commodity_detail
+        ,  AVG(price) over (partition by commodity_detail order by report_date rows between 29 preceding and current row) as MA30
+        from table1
+        and report_date >= :start_date and report_date <= :end_date 
+        and commodity_detail = :commodity
+        order by report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - date_type
+    - end_date
+    - commodity
+
+
+commodity-price-index-rebased-on-100:
+sql: |-
+
+        with table0 as
+        (
+        select 
+        report_date
+        , coalesce(commodity ||' ' || origin_country, commodity || ' ' ||'global') as commodity
+        , price
+        from iceberg.mart_macroeconomics.fact_macroeconomics_commodity_prices
+        where index_basis is null
+        )
+        , table1 as
+        (
+        select min(report_date) min_date
+        ,case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type= 'ngày' then cast(report_date as varchar)
+        end report_date
+        , commodity
+        , AVG(price) as price
+        from table0
+        group by commodity,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày'  then cast(report_date as varchar)
+        end 
+        )
+        select min_date
+        , report_date
+        , commodity
+        , 100 *(price/First_value(price) over (partition by commodity order by report_date)) as value
+        from table1
+        and commodity = :commodity
+        and report_date >= :start_date and report_date <= :end_date
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - commodity
+    - date_type
+
+
+price-between-latest-date-and-previous-date:
+sql: |-
+        with table0 as
+        (
+        select min(report_date) min_date
+        ,case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày' then cast(report_date as varchar)
+        end report_date
+        , coalesce(commodity ||' ' || origin_country, commodity || ' ' ||'global') as commodity
+        , AVG(price) as price
+        , row_number () over (partition by coalesce(commodity ||' ' || origin_country, commodity || ' ' ||'global') 
+        order by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày' then cast(report_date as varchar)
+        end desc) as rank
+        from iceberg.mart_macroeconomics.fact_macroeconomics_commodity_prices
+        where index_basis is null
+        and commodity not like '%Vàng%'
+        group by coalesce(commodity ||' ' || origin_country, commodity || ' ' ||'global'),
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày'  then cast(report_date as varchar)
+        end 
+        )
+        , table1 as
+        (
+        select *
+        from table0
+        where rank in(1,2)
+        )
+        select
+        commodity
+                , Max(case when rank = 1 then report_date end) as latetest_date
+                , max(case when rank = 2 then report_date end) as pre_latest_date
+                , max(case when rank = 1 then price end) as latest_price
+                , max(case when rank =2 then price end) as pre_latest_price
+                , ROUND((max(case when rank = 1 then price end) - max(case when rank =2 then price end))/nullif(max(case when rank =2 then price end),0)*100, 2) as percent_change
+        FROM table1
+        where report_date >= :start_date and report_date <= :end_date 
+        GROUP BY commodity:commodity
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - commodity
+    - date_type
+
+
+average-day-over-price-diference:
+sql: |-
+        with table0 as
+        (
+        select min(report_date) min_date
+        ,case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        when :date_type = 'ngày' then cast(report_date as varchar)
+        end report_date
+        , coalesce(commodity ||' ' || origin_country, commodity || ' ' ||'global') as commodity
+        , AVG(price) as price
+        from iceberg.mart_macroeconomics.fact_macroeconomics_commodity_prices
+        where index_basis is null
+        and commodity not like '%Vàng%'
+        group by coalesce(commodity ||' ' || origin_country, commodity || ' ' ||'global'),
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày' then cast(report_date as varchar)
+        end
+        )
+        select curr.min_date
+        , curr.report_date
+        , curr.commodity
+        , coalesce(AVG((curr.price - prev.price)/nullif(prev.price,0)),0) avg_dod
+        from table0 curr
+        join table0 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        and curr.commodity = prev.commodity
+        where report_date >= :start_date and report_date <= :end_date 
+        group by curr.min_date, curr.report_date, curr.commodity: commodity
+        order by avg_DoD desc
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - commodity
+    - date_type
+
+
+fx-swap-rate:
+sql: |-
+        select 
+        report_date
+        , tenor
+        , ROUND((bid+ask)/2*100,2) as rate
+        from iceberg.mart_macroeconomics.fact_money_market_vbma_fx_swap_rate
+        where report_date >= :start_date and report_date <= :end_date 
+        order by report_date 
+        , case 
+                when tenor = 'Spot' then 0
+                when tenor = 'ON' then 1
+                when tenor = '1W' then 2
+                when tenor = '2W' then 3
+                when tenor = '3W' then 4
+                when tenor = '1M' then 5
+                when tenor = '2M' then 6
+                when tenor = '3M' then 7
+                when tenor = '6M' then 8
+                when tenor = '9M' then 9
+                when tenor = '1Y' then 10
+        end
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+
+
+dxy-index:
+sql: |-
+        with table0 as
+        (
+        select
+        report_date 
+        , foreign_exchange_rate as rate
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_trading
+        where foreign_exchange_rate_tp = 'Dollar Index Futures'
+        )
+        Select
+        min(report_date) min_date
+        ,case 
+        when :date_type = 'năm' then cast(year(report_date) as varchar)
+        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        when :date_type = 'ngày' then cast(report_date as varchar)
+        end report_date
+        , AVG(rate) rate
+        from table0
+        group by 
+        case 
+        when :date_type = 'năm' then cast(year(report_date) as varchar)
+        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        when :date_type = 'ngày' then cast(report_date as varchar)
+        end 
+        order by min_date
+        and  report_date >= :start_date and report_date <= :end_date 
+        order by report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+exchange-usd-vnd-rate:
+sql: |-
+        select
+        report_date 
+        , case
+        when foreign_exchange_rate_tp = 'Tỷ giá USD trung tâm - NHNN' then 'Central rate'
+        when foreign_exchange_rate_tp = 'Tỷ giá USD sàn - NHNN' then 'Lower band'
+        when foreign_exchange_rate_tp = 'Tỷ giá USD trần - NHNN' then 'Upper band'
+        when foreign_exchange_rate_tp = 'Tỷ giá USD NHTM chuyển khoản' then 'Interbank'
+        end as exchange_tp
+        , foreign_exchange_rate
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        where foreign_exchange_rate_tp in 
+        (
+        'Tỷ giá USD trung tâm - NHNN'
+        , 'Tỷ giá USD sàn - NHNN'
+        , 'Tỷ giá USD trần - NHNN'
+        , 'Tỷ giá USD NHTM chuyển khoản'
+        )
+        and report_date in
+        (
+        select max(report_date) report_date
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        group by case 
+        when :date_type = 'năm' then cast(year(report_date) as varchar)
+        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        when :date_type = 'ngày' then cast(report_date as varchar)
+        end 
+        )
+        and report_date >= :start_date and report_date <= :end_date 
+        and exchange_tp =:exchange_tp
+        order by report_date, exchange_tp
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - exchange_tp
+    - data_type
+
+
+median-deposit-rate-in-bank-group:
+sql: |-
+        with table0 as
+        (
+        select
+        report_date
+        , case 
+        when bank_group = 'Nhóm NHTM nhà nước SOBs' then 'Tier A'
+        when bank_group = 'Nhóm NHTM lớn - MBB, ACB, TCB, VPB' then 'Tier B'
+        when bank_group = 'Nhóm NHTM khác' then 'Tier C'
+        end as bank_group
+        , interest_rate
+        from iceberg.mart_macroeconomics.fact_money_market_term_deposit_rates_per_bank_group 
+        where term = '12m'
+        and report_date in
+        (
+        select max(report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_term_deposit_rates_per_bank_group 
+        group by
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày' then cast(report_date as varchar)
+        end 
+        )
+        )
+        , table1 as
+        (
+        select 
+        report_date
+        , bank_group
+        , interest_rate
+        , row_number () over(partition by report_date, bank_group order by interest_rate) as rank
+        , COUNT(*) over (partition by report_date, bank_group) as number_of_row
+        from table0
+        )
+        select 
+        report_date
+        , bank_group
+        , case
+        when number_of_row %2 =1 then
+        Max(case when rank = (number_of_row +1)/2 then interest_rate end)
+        else
+        AVG(case when rank in (number_of_row/2, number_of_row/2+1) then interest_rate end)
+        end as median_rate
+        from table1
+        where report_date >= :start_date and report_date <= :end_date 
+        and bank_group = :bank_group
+        group by bank_group, report_date, number_of_row
+        order by bank_group, report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - bank_group
+    - date_type
+
+
+the-latest-us-and-vn-yield-curve:
+sql: |-
+        select 
+        report_date
+        , case
+        when term = '1d' then 'On'
+        else term 
+        end as term
+        , interest_rate
+        from iceberg.mart_macroeconomics.fact_money_market_interbank_interest_rate 
+        where interest_rate is not null
+        and report_date in
+        (select max (report_date)
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index
+        where country in ('Việt Nam', 'Chính phủ liên bang Hoa Kỳ')
+        group by 
+        case 
+        when :date_type = 'năm' then cast(year(report_date) as varchar)
+        when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+        when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        when :date_type = 'ngày' then cast(report_date as varchar)
+        end
+        )
+        order by report_date
+        , case 
+        when term = 'OnOn' then 0
+        when term = '1w' then 1
+        when term = '2w' then 2
+        when term = '1m' then 3
+        when term = '3m'then 4
+        end
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - term
+    - date_type
+
+
+interbank-interest-rate:
+sql: |-
+
+        select 
+        report_date
+        , case
+                when term = '1d' then 'On'
+                else term 
+        end as term
+        , interest_rate
+        from iceberg.mart_macroeconomics.fact_money_market_interbank_interest_rate 
+        where interest_rate is not null
+        and report_date >= :start_date and report_date <= :end_date 
+        and term = :termterm
+        order by report_date
+        , case 
+                when term = '1d' then 0
+                when term = '1w' then 1
+                when term = '2w' then 2
+                when term = '1m' then 3
+                when term = '3m'then 4
+        endselect 
+        report_date
+        , case
+                when term = '1d' then 'On'
+                else term 
+        end as term
+        , interest_rate
+        from iceberg.mart_macroeconomics.fact_money_market_interbank_interest_rate 
+        where interest_rate is not null
+        and report_date in
+        (
+        select max(report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_interbank_interest_rate 
+        group by
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày' then cast(report_date as varchar)
+        end 
+        )
+        and report_date >= :start_date and report_date <= :end_date 
+        and term = :term
+        order by report_date
+        , case 
+                when term = 'On' then 1
+                when term = '1w' then 2
+                when term = '2w' then 3
+                when term = '1m' then 4
+                when term = '3m'then 5
+        end
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - term
+    - date_type
+
+
+10y-government-bond-yields-and-sobs-deposit-rate-term-3m:
+sql: |-
+
+        with table0 as
+        (
+        select
+        report_date
+        , bond_yield
+        from iceberg.mart_macroeconomics.fact_macroeconomics_secondary_market_yield_curve 
+        where term = '10y'
+        and country = 'Việt Nam'
+        )
+        , table1 as
+        (
+        select 
+        report_date 
+        , bank_group 
+        , interest_rate 
+        from iceberg.mart_macroeconomics.fact_money_market_term_deposit_rates_per_bank_group 
+        where bank_group = 'Nhóm NHTM nhà nước SOBs'
+        and term = '3m'
+        )
+        , table2 as
+        (
+        select 
+        t0.report_date
+        , bond_yield
+        , interest_rate
+        from table0 t0
+        join table1 t1
+        on t0.report_date = t1.report_date
+        )
+        select report_date
+        , bond_yield
+        , interest_rate
+        from table2
+        where report_date in
+        (
+        select max(report_date)
+        from table2
+        group by
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày' then cast(report_date as varchar)
+        end 
+        )
+        and t0.report_date >= :start_date and report_date <= :end_date 
+        order by report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+m2-money-supply:
+sql: |-
+
+       with table0 as
+        (
+        select 
+        report_date
+        , m2
+        from iceberg.mart_macroeconomics.fact_money_market_money_supply 
+        where report_date in
+        (
+        select max(report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_money_supply  
+        group by
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày' then cast(report_date as varchar)
+        end 
+        ))
+        select curr.*
+        , coalesce((curr.m2 - prev.m2)/nullif(prev.m2,0),0) yoy
+        from table0 curr
+        join table0 prev 
+        on date_diff('month',prev.report_date, curr.report_date) = 12
+        where report_date >= :start_date and report_date <= :end_date 
+        order by curr.report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+open-market-ooperation:
+sql: |-
+
+        WITH table0 AS (
+        SELECT 
+        report_date,
+        CASE
+        WHEN omo_policy = 'Phát hành OMO' AND component = 'Khối lượng phát hành' THEN 'Injection_omo'
+        WHEN omo_policy = 'Phát hành OMO' AND component = 'Khối lượng đáo hạn' THEN 'Withdrawlal_omo'
+        WHEN omo_policy = 'Phát hành tín phiếu' AND component = 'Khối lượng phát hành' THEN 'Withdrawlal_tp'
+        WHEN omo_policy = 'Phát hành tín phiếu' AND component = 'Khối lượng đáo hạn' THEN 'Injection_tp'
+        END AS component,
+        value
+        FROM iceberg.mart_macroeconomics.fact_money_market_open_market_operation_policy 
+        WHERE omo_policy IN ('Phát hành tín phiếu', 'Phát hành OMO')
+        AND term IS NULL
+        AND component IN ('Khối lượng phát hành','Khối lượng đáo hạn')
+        ),
+        table1 AS (
+        SELECT 
+        report_date,
+        component,
+        CASE 
+        WHEN component = 'Withdrawlal_tp' THEN -ABS(value)
+        WHEN component = 'Injection_tp' THEN ABS(value)
+        ELSE value
+        END AS value
+        FROM table0
+        ),
+        table2 AS (
+        SELECT 
+        MAX(report_date) AS max_date,
+        CASE 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày' then cast(report_date as varchar)
+        END AS time_period,
+        component,
+        SUM(value) AS value
+        FROM table1
+        GROUP BY 
+        component,
+        CASE 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày' then cast(report_date as varchar)
+        END
+        ),
+        table3 AS (
+        SELECT
+        MAX(max_date) AS max_date,
+        time_period,
+        SUM(CASE WHEN component = 'Injection_omo' THEN value ELSE 0 END) AS Injection_omo,
+        SUM(CASE WHEN component = 'Injection_tp' THEN value ELSE 0 END) AS Injection_tp,
+        SUM(CASE WHEN component = 'Withdrawlal_omo' THEN value ELSE 0 END) AS Withdrawlal_omo,
+        SUM(CASE WHEN component = 'Withdrawlal_tp' THEN value ELSE 0 END) AS Withdrawlal_tp
+        FROM table2
+        GROUP BY time_period
+        ),
+        table4 AS (
+        SELECT  
+        max_date,
+        time_period,
+        Injection_omo + Injection_tp AS Injection,
+        Withdrawlal_omo + Withdrawlal_tp AS Withdrawlal,
+        ABS(Injection_omo + Injection_tp) - ABS(Withdrawlal_omo + Withdrawlal_tp) AS Net_value
+        FROM table3
+        ),
+        table5 AS (
+        SELECT
+        report_date,
+        interest_rate AS omo_rate
+        FROM iceberg.mart_macroeconomics.fact_money_market_interest_rate_policy 
+        WHERE interest_rate_policy = 'Lãi suất OMO'
+        AND term IS NULL 
+        AND report_date IN (
+        SELECT MAX(report_date)
+        FROM iceberg.mart_macroeconomics.fact_money_market_interest_rate_policy 
+        GROUP BY 
+        CASE 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+                when :date_type = 'ngày' then cast(report_date as varchar)
+        END
+        )
+        )
+        SELECT 
+        t4.max_date,
+        t4.time_period,
+        t5.omo_rate,
+        t4.Injection,
+        t4.Withdrawlal,
+        t4.Net_value
+        FROM table4 t4
+        LEFT JOIN table5 t5
+        ON YEAR(t4.max_date) = YEAR(t5.report_date)
+        AND QUARTER(t4.max_date) = QUARTER(t5.report_date)
+        AND MONTH(t4.max_date) = MONTH(t5.report_date)
+        where t4.max_datedate >= :start_date and report_date <= :end_date 
+        and component =:component
+        ORDER BY t4.max_date;
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - component
+    - date_type
+
+
+deposit-growth-ytd:
+sql: |-
+
+        with table0 as
+        (
+        select 
+        report_date
+        , deposit
+        , First_value(deposit) over (partition by year(report_date) order by month (report_date)) as first_deposit
+        from iceberg.mart_macroeconomics.fact_money_market_banking_deposit 
+        where index_basis is null
+        and individual_or_institution is null
+        )
+        select report_date
+        , ROUND((deposit - first_deposit)/Nullif(first_deposit,0) *100, 2) as growth_rate
+        from table0
+        where report_date >= :start_date and report_date <= :end_date 
+        order by report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+credit-and-deposit-value: 
+sql: |-
+
+        with table0 as
+        (
+        select
+        report_date
+        , deposit
+        from iceberg.mart_macroeconomics.fact_money_market_banking_deposit 
+        where individual_or_institution is null 
+        and index_basis is null
+        )
+        , table1 as
+        (
+        select
+        report_date
+        , credit
+        from iceberg.mart_macroeconomics.fact_money_market_banking_credit_per_sector 
+        where index_basis is null
+        and sector is null
+        )
+        , table2 as
+        (
+        select 
+        t0.report_date
+        , deposit
+        , credit
+        from table0 t0
+        left join table1 t1
+        on t0.report_date = t1.report_date
+        )
+        select report_date
+        , deposit
+        , credit
+        , deposit - credit as net_value
+        from table2
+        where report_date in
+        (
+        select max(report_date)
+        from table2
+        group by
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        and report_date >= :start_date and report_date <= :end_date 
+        order by report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+heat-map-gdp-thực-growth-yoy:
+sql: |-
+        with table0 as
+        (
+        select
+        report_date
+        , gdp
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where sector is null
+        and index_basis is null 
+        and component is null
+        and gdp_tp = 'GDP thực'
+        )
+        , table1 as
+        (     select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        sum(gdp) gdp
+        from table0
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        select curr.*
+        , coalesce((curr.gdp - prev.gdp)/nullif(prev.gdp,0),0) yoy 
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        where report_date >= :start_date and report_date <= :end_date 
+        order by curr.report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+heat-map-nominal-gdp-usd-bn:
+sql: |-
+
+        with table0 as
+        (
+        select
+        report_date
+        , gdp
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where sector is null
+        and index_basis is null 
+        and component is null
+        and gdp_tp = 'GDP danh nghĩa'
+        )
+        , table1 as
+        (
+        select 
+        max(report_date) max_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        sum(gdp) gdp
+        from table0
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        , table2 as
+        (
+        select 
+        distinct report_date 
+        , foreign_exchange_rate as rate
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        where foreign_exchange_rate_tp = 'Tỷ giá USD trung tâm - NHNN'
+        and report_date in 
+        (
+        select 
+        MAX(Report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        group by quarter(report_date), year(report_date)
+        )
+        )
+        select t1.max_date
+        , t1.report_date
+        , ROUND(gdp/rate,0) as GDP
+        from table1 t1
+        left join table2 t2
+        on Year(t1.max_date) = Year(t2.report_date)
+        and quarter(t1.max_date) = quarter(t2.report_date)
+        where report_date >= :start_date and report_date <= :end_date 
+        order by t1.max_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+gdp-per-capita-usd:
+sql: |-
+
+       with table0 as
+        (
+        select
+        report_date
+        ,SUM(gdp) over (partition by year(report_date) order by report_date) as gdp 
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where sector is null
+        and index_basis is null 
+        and component is null
+        and gdp_tp = 'GDP danh nghĩa'
+        )
+        , table1 as
+        (
+        select 
+        max(report_date) max_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        sum(gdp) gdp
+        from table0
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        , table2 as
+        (
+        select 
+        distinct report_date 
+        , foreign_exchange_rate as rate
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        where foreign_exchange_rate_tp = 'Tỷ giá USD trung tâm - NHNN'
+        and report_date in 
+        (
+        select 
+        MAX(Report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        group by quarter(report_date), year(report_date)
+        )
+        order by report_date
+        )
+        , table3 as
+        (select 
+        report_date 
+        , population
+        from iceberg.mart_macroeconomics.fact_macroeconomics_population
+        where urban_or_rural is null
+        and gender is null
+        and index_basis is null 
+        and province = 'Việt Nam'
+        )
+        select t1.max_date
+        , t1.report_date
+        , ROUND((gdp*1e9)/(rate*population*1000), 2) as capita
+        from table1 t1
+        left join table2 t2
+        on year(t1.max_date) = year(t2.report_date)
+        and quarter(t1.max_date) = quarter(t2.report_date)
+        left join table3 t3
+        on year(t1.max_date) = year(t3.report_date)
+        and quarter(t1.max_date) = quarter(t3.report_date)
+        and report_date >= :start_date and report_date <= :end_date 
+        order by t1.max_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+unemployment-rate:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , ROUND(unemployment_rate_labor_force, 1) as rate
+        from iceberg.mart_macroeconomics.fact_macroeconomics_unemployment_rate
+        where component = 'Tỷ lệ thất nghiệp trong độ tuổi lao động'
+        and urban_or_rural is null
+        )
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        AVG(rate) rate
+        from table0
+        where report_date >= :start_date and report_date <= :end_date
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+
+
+fdi-disbursement-usd-bn:
+sql: |-
+
+        with table0 as
+        (
+        select 
+        report_date
+        ,value/1000 as fdi
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_fdi_investment_per_component 
+        where index_basis is null
+        and component = 'Vốn thực hiện'
+        )
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        sum(fdi) fdi
+        from table0
+        where report_date >= :start_date and report_date <= :end_date
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+
+fdi-disbursement-of-gdp:
+sql: |-
+
+        with table0 as
+        (
+        select
+        report_date
+        , gdp 
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where sector is null
+        and index_basis is null 
+        and component is null
+        and gdp_tp = 'GDP danh nghĩa'
+        )
+        , table1 as
+        (
+        select 
+        distinct report_date 
+        , foreign_exchange_rate as rate
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        where foreign_exchange_rate_tp = 'Tỷ giá USD trung tâm - NHNN'
+        and report_date in 
+        (
+        select 
+        MAX(Report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        group by quarter(report_date), year(report_date)
+        )
+        )
+        , table2 as
+        (select 
+        year(report_date) as year
+        , quarter(report_date) as quarter
+        , Round(SUM(value/1000),1) as fdi
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_fdi_investment_per_component 
+        where index_basis is null
+        and component = 'Vốn thực hiện'
+        group by year(report_date), quarter(report_date)
+        )
+        , table3 as
+        (
+        select 
+        t0.report_date
+        , gdp/rate gdp
+        , fdi
+        from table0 t0
+        left join table1 t1
+        on year(t0.report_date) = year(t1.report_date)
+        and quarter(t0.report_date) = quarter(t1.report_date)
+        left join table2 t2
+        on year(t0.report_date) = t2.year
+        and quarter(t0.report_date) = t2.quarter
+        )
+        , table4 as
+        (
+        select 
+        max(report_date) max_date
+        , case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , sum(gdp) gdp
+        , sum(fdi) fdi
+        from table3
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+        end
+        )
+        select max_date
+        , report_date
+        , ROUND ((fdi/gdp)*100, 1) as fdi_gdp
+        from table4
+        order by max_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+
+export-gdp:
+sql: |-
+
+        with table0 as
+        (
+        select
+        report_date
+        , gdp 
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where sector is null
+        and index_basis is null 
+        and component is null
+        and gdp_tp = 'GDP danh nghĩa'
+        )
+        , table1 as
+        (
+        select 
+        distinct report_date 
+        , foreign_exchange_rate as rate
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        where foreign_exchange_rate_tp = 'Tỷ giá USD trung tâm - NHNN'
+        and report_date in 
+        (
+        select 
+        MAX(Report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        group by quarter(report_date), year(report_date)
+        )
+        )
+        , table2 as
+        (
+        select 
+        year(report_date) as year
+        , quarter(report_date) as quarter
+        , SUM(value/1000) as export
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_import_export_per_component
+        where trade_tp = 'Xuất khẩu' 
+        and index_basis is null
+        and dmt_or_frgn is null
+        group by year(report_date), quarter(report_date)
+        )
+        , table3 as
+        (
+        select
+        t0.report_date
+        , gdp/rate gdp
+        , export
+        from table0 t0
+        left join table1 t1
+        on year(t0.report_date) = year(t1.report_date)
+        and quarter(t0.report_date) = quarter(t1.report_date)
+        left join table2 t2
+        on year(t0.report_date) = t2.year
+        and quarter(t0.report_date) = t2.quarter
+        )
+        , table4 as
+        (
+        select 
+        max(report_date) max_date
+        , case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , sum(gdp) gdp
+        , sum(export) export
+        from table3
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        select max_date
+        , report_date
+        , ROUND ((export/gdp)*100, 1) as export_gdp
+        from table4
+        where t0.report_date >= :start_date and report_date <= :end_date
+        order by max_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date-type
+
+export-growth-yoy:
+sql: |-
+
+        with table0 as
+        (
+        select 
+        report_date
+        , value 
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_import_export_per_component
+        where trade_tp = 'Xuất khẩu' 
+        and index_basis is null
+        and dmt_or_frgn is null
+        )
+        , table1 as     
+        (
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        end report_date,
+        sum(value) value
+        from table0
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        end
+        )
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy 
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        where report_date >= :start_date and report_date <= :end_date
+        order by curr.min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - data_type
+
+
+
+import-growth-yoy:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_import_export_per_component
+        where trade_tp = 'Nhập khẩu' 
+        and index_basis is null
+        and dmt_or_frgn is null
+        )
+        , table1 as     
+        (
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        sum(value) value
+        from table0
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy 
+        from table1 curr
+        join table1 prev 
+        on date_diff('month',prev.min_date, curr.min_date) = 12
+        where report_date >= :start_date and report_date <= :end_date
+         order by curr.min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - data_type
+
+
+
+goods-balance-usd-bn:
+sql: |-
+
+        with table0 as
+        (select 
+        report_date
+        , value/1000 as value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_import_export_per_component
+        where trade_tp = 'Xuất khẩu' 
+        and index_basis is null
+        and dmt_or_frgn is null
+        )
+        , table1 as
+        (select 
+        report_date
+        , value/1000 as value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_import_export_per_component
+        where trade_tp = 'Nhập khẩu' 
+        and index_basis is null
+        and dmt_or_frgn is null
+        )
+        , table2 as
+        (
+        select 
+        t0.report_date
+        , t0.value as export
+        , t1.value as import
+        from table0 t0
+        left join table1 t1
+        on t0.report_date = t1.report_date
+        )
+        , table3 as
+        (
+        select 
+        min(report_date) min_date
+        , case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , sum(export) export
+        , sum(import) import
+        from table2
+        group by
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        select min_date
+        , report_date
+        , Round(export - import,1) as Goods_trade_balance
+        from table3
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+
+foreign-reverse-usd-bn:
+sql: |-
+
+        select
+        report_date
+        , ROUND(foreign_exchange_reserves/1000, 1) as value
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_reserves
+        where report_date in
+        (
+        select
+        Max(report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_reserves
+        where report_date >= :start_date and report_date <= :end_date
+        group by
+        case
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        order by report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+fx-reverse-of-gdp:
+sql: |-
+
+        with table0 as
+        (
+        select
+        report_date
+        , gdp 
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where sector is null
+        and index_basis is null 
+        and component is null
+        and gdp_tp = 'GDP danh nghĩa'
+        )
+        , table1 as
+        (
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        end report_date,
+        sum(gdp) gdp
+        from table0
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        end
+        )
+        , table2 as
+        (
+        select 
+        distinct report_date 
+        , foreign_exchange_rate as rate
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        where foreign_exchange_rate_tp = 'Tỷ giá USD trung tâm - NHNN'
+        and report_date in 
+        (
+        select 
+        MAX(Report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_rate_vietnam
+        group by Year(report_date)
+        , quarter(report_date)
+        )
+        )
+        , table3 as
+        (
+        select
+        report_date
+        , ROUND(foreign_exchange_reserves/1000, 1) as value
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_reserves
+        where report_date in
+        (
+        select
+        Max(report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_foreign_exchange_reserves
+        group by case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        end
+        ))
+        select 
+        t1.min_date
+        , t1.report_date
+        , ROUND(t3.value/(gdp/rate)*100,1) as rate
+        from table1 t1
+        left join table2 t2
+        on Year(t1.min_date) = Year(t2.report_date)
+        and quarter(t1.min_date) = quarter(t2.report_date)
+        left join table3 t3
+        on Year(t1.min_date) = Year(t3.report_date)
+        and quarter(t1.min_date) = quarter(t3.report_date)
+        where report_date >= :start_date and report_date <= :end_date
+        order by t1.min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+
+inflation-average-yoy:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index 
+        where component = 'Tỷ lệ lạm phát'
+        and index_basis = 'YOY'
+        )
+        select 
+        max(report_date) max_date
+        ,case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar)
+        end report_date
+        , Round(AVG(value),1) as yoy_inflation
+        from table0
+        where report_date >= :start_date and report_date <= :end_date
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end       
+        order by max_date
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+cpi-yoy:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index
+        where component ='Chỉ số giá tiêu dùng'
+        and product is null
+        and index_basis is null
+        and report_date in
+        (
+        select max(report_date)
+        from iceberg.mart_macroeconomics.fact_macroeconomics_consumer_price_index
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+        end 
+        ))
+        select curr.*
+        , coalesce((curr.value - prev.value)/nullif(prev.value,0),0) yoy 
+        from table0 curr
+        join table0 prev 
+        on date_diff('month',prev.report_date, curr.report_date) = 12
+        where report_date >= :start_date and report_date <= :end_date
+        order by curr.report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+
+deposit-rate-cap-<6m:
+sql: |-
+        select 
+        report_date 
+        , interest_rate as rate
+        from iceberg.mart_macroeconomics.fact_money_market_interest_rate_policy
+        where interest_rate_policy = 'Trần lãi suất tiền gửi kỳ hạn từ 1-6 tháng'
+        and report_date in
+        (
+        select max(report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_interest_rate_policy
+        where report_date >= :start_date and report_date <= :end_date
+        group by case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )
+        order by report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+credit-growth-yoy:
+sql: |-
+
+        with table0 as
+        (
+        select
+        report_date
+        ,credit
+        from iceberg.mart_macroeconomics.fact_money_market_banking_credit_per_sector
+        where index_basis is null 
+        and sector is null
+        and report_date in
+        (
+        select max(report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_banking_credit_per_sector
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+        end
+        )
+        )
+        select curr.*
+        , coalesce((curr.credit - prev.credit)/nullif(prev.credit,0),0) yoy 
+        from table0 curr
+        join table0 prev 
+        on date_diff('month',prev.report_date, curr.report_date) = 12
+        where report_date >= :start_date and report_date <= :end_date
+        order by curr.report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+budget-deficit-of-gdp:
+sql: |-
+
+        with table0 as
+        (
+        select
+        report_date
+        , gdp 
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where sector is null
+        and index_basis is null 
+        and component is null
+        and gdp_tp = 'GDP danh nghĩa'
+        )
+        , table1 as
+        (
+        select 
+        report_date 
+        , value as expense
+        from iceberg.mart_macroeconomics.fact_macroeconomics_state_budget_expenses
+        where index_basis is null 
+        and component is null
+        )
+        , table2 as
+        (
+        select
+        report_date
+        , value as revenue
+        from iceberg.mart_macroeconomics.fact_macroeconomics_state_budget_revenues 
+        where index_basis is null 
+        and component is null
+        )
+        , table3 as
+        (
+        select 
+        t0.report_date
+        , gdp
+        , revenue
+        , expense
+        --, ROUND((revenue - expense)/gdp*100, 2) as rate
+        from table0 t0
+        left join table1 t1
+        on t0.report_date = t1.report_date
+        left join table2 t2
+        on t0.report_date = t2.report_date
+        )
+        select 
+        max(report_date) max_date
+        , case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+        end report_date
+        , Round((Sum(revenue) - sum(expense))/sum(gdp) *100, 2) as rate
+        from table3
+        where report_date >= :start_date and report_date <= :end_date
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+        end
+        order by max_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+public-debt-of-gdp:
+sql: |-
+
+        with table0 as
+        (
+        select
+        report_date
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_state_debt
+        where dmt_or_frgn is null 
+        and index_basis is null
+        and component = 'Dư nợ'
+        and report_date in
+        (
+        select max(report_date)
+        from iceberg.mart_macroeconomics.fact_macroeconomics_state_debt
+        group by
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end 
+        ))
+        , table1 as
+        (
+        select
+        report_date
+        , gdp
+        from iceberg.mart_macroeconomics.fact_macroeconomics_gdp_per_sector 
+        where sector is null
+        and index_basis is null 
+        and component is null
+        and gdp_tp = 'GDP danh nghĩa'
+        )
+        , table2 as
+        (
+        select
+        max(report_date) max_date
+        , case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , SUM(gdp) as gdp 
+        from table1
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end 
+        )
+        select 
+        t2.max_date
+        , t2.report_date
+        , value
+        , Round((value/Sum(gdp) over (partition by year(t2.max_date) order by t2.max_date))*100,1)
+        from table2 t2
+        left join table0 t0
+        on year(t2.max_date) = year(t0.report_date)
+        and quarter(t2.max_date) = quarter(t0.report_date)
+        where report_date >= :start_date and report_date <= :end_date
+        order by t2.max_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+number-of-international-visitor:
+sql: |-
+        with table0 as (
+        select report_date
+        , num_of_inter_passengers num 
+        from iceberg.mart_macroeconomics.fact_macroeconomics_international_visitors_per_type 
+        where means_of_transportation is null and index_basis is null
+        )
+        select 
+        min(report_date) min_date,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date,
+        sum(num) num
+        from table0
+        where report_date >= :start_date and report_date <= :end_date
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+fdi-registered-and-disbursement-value:
+sql: |-
+        with table0 as
+        (
+        select
+        report_date
+        , case 
+                when component = 'Vốn đăng ký' then 'FDI_registered'
+                when component = 'Vốn thực hiện' then 'FDI_disbursement'
+        end as component
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_vietnam_fdi_investment_per_component
+        where index_basis is null 
+        and component in ('Vốn đăng ký', 'Vốn thực hiện' )
+        )     
+        select 
+        min(report_date) min_date
+        , case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , component
+        , sum(value) value
+        from table0
+        where report_date >= :start_date and report_date <= :end_date
+        and component = :componentcomponent
+        group by  component,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end     
+        order by min_date
+params:
+    - start_date
+    - end_date
+    - component
+    - date_type
+
+
+number-of-registration-record:
+sql: |-
+
+        with table0 as
+        (
+        select 
+        report_date
+        , case
+                when component = 'DN thành lập mới' then 'Registered enterprises'
+                when component = 'Vốn đăng ký' then 'Registered capital'
+                when component = 'Lao động' then 'Registerd Employees'
+        end as component
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_business_registration_records 
+        where index_basis is null
+        and component in ('DN thành lập mới','Vốn đăng ký', 'Lao động')
+        )
+        select 
+        min(report_date) min_date
+        , case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , component
+        ,sum(value) value
+        from table0
+        and report_date >= :start_date and report_date <= :end_date
+        and component =:componentcomponent
+        group by component,
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        order by min_date, component
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - component
+    - date_type
+
+average-income-vnd-mn:
+sql: |-
+        with table0 as
+        (
+        select 
+        report_date 
+        , value
+        from iceberg.mart_macroeconomics.fact_macroeconomics_national_labor_force
+        where urban_or_rural is null 
+        and gender is null 
+        and index_basis is null 
+        and component = 'Tiền lương bình quân tháng (Nghìn đồng)'
+        )
+        select 
+        min(report_date) min_date
+        , case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end report_date
+        , AVG(value) value
+        from table0
+        where report_date >= :start_date and report_date <= :end_date
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        order by min_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+
+credit-growth-ytd:
+sql: |-
+
+        with table0 as
+        (
+        select 
+        report_date
+        , credit
+        from iceberg.mart_macroeconomics.fact_money_market_banking_credit_per_sector
+        where index_basis is null 
+        and sector is null
+        and report_date in
+        (select max(report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_banking_credit_per_sector
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        ))
+        select 
+        report_date
+        , ROUND((credit - First_value(credit) over (partition by Year(report_date) order by report_date))/ First_value(credit) over (partition by Year(report_date) order by report_date) *100,1) as rate
+        from table0
+        where report_date >= :start_date and report_date <= :end_date
+        order by report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
+
+credit-and-deposit-growth-ytd:
+sql: |-
+
+        with table0 as
+        (
+        select 
+        report_date
+        , credit
+        from iceberg.mart_macroeconomics.fact_money_market_banking_credit_per_sector
+        where index_basis is null 
+        and sector is null
+        and report_date in
+        (select max(report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_banking_credit_per_sector
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        )) 
+        , table1 as
+        (
+        select 
+        report_date
+        , ROUND((credit - First_value(credit) over (partition by Year(report_date) order by report_date))/ First_value(credit) over (partition by Year(report_date) order by report_date) *100,1) as credit_rate
+        from table0
+        )
+        , table2 as
+        (
+        select 
+        report_date
+        , deposit
+        from iceberg.mart_macroeconomics.fact_money_market_banking_deposit 
+        where index_basis is null
+        and individual_or_institution is null
+        and report_date in
+        (select max(report_date)
+        from iceberg.mart_macroeconomics.fact_money_market_banking_credit_per_sector
+        group by 
+        case 
+                when :date_type = 'năm' then cast(year(report_date) as varchar)
+                when :date_type = 'quý' then cast(quarter(report_date) as varchar) || '/' || cast(year(report_date) as varchar)  
+                when :date_type = 'tháng' then cast(month(report_date) as varchar) || '/' || cast(year(report_date) as varchar) 
+        end
+        ))
+        , table3 as
+        (
+        select 
+        report_date
+        , ROUND((deposit - First_value(deposit) over (partition by Year(report_date) order by report_date))/ First_value(deposit) over (partition by Year(report_date) order by report_date) *100,1) as deposit_rate
+        from table2
+        )
+        select 
+        t1.report_date
+        , credit_rate
+        , deposit_rate
+        from table1 t1
+        left join table3 t3
+        on t1.report_date = t3.report_date
+        where report_date >= :start_date and report_date <= :end_date
+        order by t1.report_date
+        limit ?
+        offset ?
+params:
+    - start_date
+    - end_date
+    - date_type
